@@ -51,7 +51,7 @@ function temperature(DeviceName)
     if Temperature == -999 and Pressure == -999 then
       print(DeviceName .. ' relative humidity is ' .. Humidity .. '%')
       response = DeviceName.. ' ' .. Humidity .. '%'
-    else  
+    else
       if Pressure ~= -999 then
         print(DeviceName .. ' temperature is ' .. Temperature .. '°C, relative humidity is ' .. Humidity .. '% and pressure is '.. Pressure..'hPa')
         response = DeviceName.. ' ' .. Temperature .. '°C & ' .. Humidity .. '% & '.. Pressure .. 'hPa'
@@ -70,7 +70,8 @@ function temperature(DeviceName)
 end
 
 function temperature_module.handler(parsed_cli)
-  local t, jresponse, status, decoded_response
+  local t, response, status, decoded_response
+  response = ''
   if string.lower(parsed_cli[2]) == 'temperature' then
     DeviceName = form_device_name(parsed_cli)
     if DeviceName == nil then
@@ -78,54 +79,63 @@ function temperature_module.handler(parsed_cli)
       return 1,'No Temperature Device Name given'
     end
     status, response = temperature(DeviceName)
+
+  elseif string.lower(parsed_cli[2]) == 'tempall' then
+    -- get all devices with temp info
+    Deviceslist = device_list("devices&used=true&filter=temp")
+    result = Deviceslist["result"]
+    status=""
+    for k,record in pairs(result) do
+      if type(record) == "table" then
+        -- as default simply use the status field
+        -- use the dtgbot_type_status to retrieve the status from the "other devices" field as defined in the table.
+        if dtgbot_type_status[record.Type] ~= nil then
+          if dtgbot_type_status[record.Type].Status ~= nil then
+            status = ''
+            CurrentStatus = dtgbot_type_status[record.Type].Status
+            for i=1, #CurrentStatus do
+              if status ~= '' then
+                status = status .. ' - '
+              end
+              cindex, csuffix = next(CurrentStatus[i])
+              status = status .. tostring(record[cindex])..tostring(csuffix)
+            end
+          end
+        else
+          status = tostring(record.Status)
+        end
+        print_to_log(1," !!!! found temp device",record.Name,record.Type,status)
+      end
+      response = response .. record.Name .. ":" .. status .. '\n'
+    end
   else
-    idx = idx_from_variable_name('DevicesWithTemperatures')
     -- Get list of all user variables
---    t = server_url.."/json.htm?type=command&param=getuservariables"
---    print ("JSON request <"..t..">");  
---    jresponse, status = http.request(t)
---    decoded_response = JSON:decode(jresponse)
---    result = decoded_response["result"]
---    idx = 0
---    for k,record in pairs(result) do
---      if type(record) == "table" then
---        if record['Name'] == 'DevicesWithTemperatures' then
---          print(record['idx'])
---          idx = record['idx']
---        end
---      end
---    end
+    idx = idx_from_variable_name('DevicesWithTemperatures')
     if idx == 0 then
       print('User Variable DevicesWithTemperatures not set in Domoticz')
       return 1, 'User Variable DevicesWithTemperatures not set in Domoticz'
     end
     -- Get user variable DevicesWithTemperature
     DevicesWithTemperatures = get_variable_value(idx)
---    t = server_url.."/json.htm?type=command&param=getuservariable&idx="..idx
---    print ("JSON request <"..t..">");  
---    jresponse, status = http.request(t)
---    decoded_response = JSON:decode(jresponse)
---    result = decoded_response["result"]
---    record = result[1]
---    DevicesWithTemperatures = record["Value"]
---    DeviceNames = {}
     print(DevicesWithTemperatures)
---    for DeviceName in string.gmatch(DevicesWithTemperatures, "[^|]+") do
---      DeviceNames[#DeviceNames + 1] = DeviceName
---    end
     -- Retrieve the names
     DeviceNames = get_names_from_variable(DevicesWithTemperatures)
     -- Loop round each of the devices with temperature
-    response = ''
-    for i,DeviceName in ipairs(DeviceNames) do
-      status, r = temperature(DeviceName)
-      response = response .. r .. '\n'
+    if DeviceNames ~= nil then
+      response = ''
+      for i,DeviceName in ipairs(DeviceNames) do
+        status, r = temperature(DeviceName)
+        response = response .. r .. '\n'
+      end
+    else
+      response = 'No device names found in '..DevicesWithTemperatures
     end
   end
   return status, response
 end
 
 local temperature_commands = {
+  ["tempall"] = {handler=temperature_module.handler, description="tempall - show all devices with a temperature value."},
   ["temperature"] = {handler=temperature_module.handler, description="temperature - temperature devicename - returns temperature level of devicename and when last updated"},
   ["temperatures"] = {handler=temperature_module.handler, description="temperatures - temperatures - returns temperature level of DevicesWithTemperatures and when last updated"}
 }
